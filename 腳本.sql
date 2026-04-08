@@ -320,3 +320,76 @@ END
 
 SELECT [SplitValue] FROM @ResultTable;
 GO
+
+-------------------------------------------------------------------
+-- TOOL: STORED PROCEDURE LOCATOR (跨資料庫搜尋工具)
+-- Description: Find where an SP is located across the entire server.
+-------------------------------------------------------------------
+
+-- 21. Precise Search (全伺服器精準名稱搜索)
+-- 當你百分之百確定預存程序的全名時，用這段最快。
+DECLARE @TargetSPName NVARCHAR(128) = N'job_ticket_cal_cmd'; -- 👈 填入完整名稱
+
+DECLARE @SearchCommand NVARCHAR(MAX) = N'
+    USE [?]; 
+    IF EXISTS (SELECT 1 FROM sys.procedures WHERE name = ''' + @TargetSPName + ''')
+    BEGIN
+        SELECT 
+            DB_NAME() AS [DatabaseName], 
+            SCHEMA_NAME([schema_id]) AS [SchemaName],
+            [name] AS [ProcedureName], 
+            [create_date] AS [CreateDate], 
+            [modify_date] AS [ModifyDate]
+        FROM sys.procedures 
+        WHERE name = ''' + @TargetSPName + ''';
+    END';
+
+-- Execute the search across all online databases (執行全庫掃描)
+EXEC sp_MSforeachdb @SearchCommand;
+GO
+
+
+-- 22. Fuzzy Search (全伺服器模糊關鍵字搜索)
+-- 當你只記得部分名字（例如包含 'cal'）的時候，用這段。
+DECLARE @Keyword NVARCHAR(128) = N'%cal%'; -- 👈 填入部分關鍵字
+
+DECLARE @FuzzySearchCommand NVARCHAR(MAX) = N'
+    USE [?]; 
+    IF EXISTS (SELECT 1 FROM sys.procedures WHERE name LIKE ''' + @Keyword + ''')
+    BEGIN
+        SELECT 
+            DB_NAME() AS [DatabaseName], 
+            [name] AS [ProcedureName], 
+            [type_desc] AS [ObjectType],
+            [modify_date] AS [LastModified]
+        FROM sys.procedures 
+        WHERE name LIKE ''' + @Keyword + ''';
+    END';
+
+EXEC sp_MSforeachdb @FuzzySearchCommand;
+GO
+
+
+-- 23. Content Search (全伺服器預存程序「內容」關鍵字搜索)
+-- 這是最強大的：搜尋所有預存程序的「程式碼」裡是否提到某個字（例如某張資料表名稱）。
+DECLARE @ContentKeyword NVARCHAR(128) = N'%cmd_data_archive%'; -- 👈 填入想在代碼裡找的字
+
+DECLARE @ContentSearchCommand NVARCHAR(MAX) = N'
+    USE [?]; 
+    IF EXISTS (
+        SELECT 1 FROM sys.procedures p 
+        INNER JOIN sys.sql_modules m ON p.object_id = m.object_id 
+        WHERE m.definition LIKE ''' + @ContentKeyword + '''
+    )
+    BEGIN
+        SELECT 
+            DB_NAME() AS [DatabaseName], 
+            p.[name] AS [ProcedureName], 
+            p.[modify_date] AS [LastModified]
+        FROM sys.procedures p
+        INNER JOIN sys.sql_modules m ON p.object_id = m.object_id
+        WHERE m.definition LIKE ''' + @ContentKeyword + ''';
+    END';
+
+EXEC sp_MSforeachdb @ContentSearchCommand;
+GO
