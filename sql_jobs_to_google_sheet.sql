@@ -1,237 +1,193 @@
 -- =====================================================================
--- SQL Server Agent Jobs 資訊匯出腳本
--- 用途：擷取 Job 完整資訊，匯出至 Google Sheet 整理
--- 使用方式：在 SSMS 執行後，將結果複製貼上到 Google Sheet
+-- SQL Server Agent Jobs 匯出至 Google Sheet
+-- 用途：一次查詢產出所有 Job 排程資訊，直接貼到 Google Sheet
+-- 欄位：Job Name | Enabled | Freq | Day | Time | Schedule Summary | Description
 -- =====================================================================
 
--- =====================================================================
--- 查詢 1：Job 總覽 (貼到 Sheet 1 - Job 總覽)
--- =====================================================================
 SELECT
-    j.job_id,
-    j.name                          AS [Job 名稱],
-    CASE j.enabled
-        WHEN 1 THEN '啟用'
-        WHEN 0 THEN '停用'
-    END                             AS [狀態],
-    c.name                          AS [分類],
-    j.description                   AS [描述],
-    SUSER_SNAME(j.owner_sid)        AS [擁有者],
-    j.date_created                  AS [建立日期],
-    j.date_modified                 AS [最後修改日期],
-    -- 最後執行結果
-    CASE ja.last_executed_step_id
-        WHEN 0 THEN '尚未執行'
-        ELSE CAST(ja.last_executed_step_id AS VARCHAR)
-    END                             AS [最後執行步驟],
-    CASE h.run_status
-        WHEN 0 THEN '失敗'
-        WHEN 1 THEN '成功'
-        WHEN 2 THEN '重試'
-        WHEN 3 THEN '已取消'
-        WHEN 4 THEN '進行中'
-        ELSE '尚未執行'
-    END                             AS [最後執行結果],
-    -- 最後執行時間
-    msdb.dbo.agent_datetime(h.run_date, h.run_time) AS [最後執行時間],
-    -- 執行時長 (秒)
-    h.run_duration / 10000 * 3600
-    + (h.run_duration % 10000) / 100 * 60
-    + h.run_duration % 100              AS [執行時長(秒)],
-    -- 排程資訊
+    j.name                              AS [Job Name],
+    j.enabled                           AS [Enabled],
+
+    -- Freq: 頻率描述
     CASE s.freq_type
-        WHEN 1  THEN '單次'
-        WHEN 4  THEN '每天'
-        WHEN 8  THEN '每週'
-        WHEN 16 THEN '每月'
-        WHEN 32 THEN '每月相對'
-        WHEN 64 THEN 'SQL Agent 啟動時'
-        WHEN 128 THEN '伺服器閒置時'
-        ELSE '無排程'
-    END                             AS [排程頻率],
+        WHEN 1  THEN 'Once'
+        WHEN 4  THEN
+            CASE WHEN s.freq_interval = 1 THEN 'Daily'
+                 ELSE 'Every ' + CAST(s.freq_interval AS VARCHAR) + ' days'
+            END
+        WHEN 8  THEN
+            CASE WHEN s.freq_recurrence_factor = 1 THEN 'Weekly'
+                 ELSE 'Every ' + CAST(s.freq_recurrence_factor AS VARCHAR) + ' weeks'
+            END
+        WHEN 16 THEN
+            CASE WHEN s.freq_recurrence_factor = 1 THEN 'Monthly'
+                 ELSE 'Every ' + CAST(s.freq_recurrence_factor AS VARCHAR) + ' months'
+            END
+        WHEN 32 THEN 'Monthly Relative'
+        WHEN 64 THEN 'On Agent Start'
+        WHEN 128 THEN 'On Idle'
+        ELSE ''
+    END                                 AS [Freq],
+
+    -- Day: 執行日
+    CASE s.freq_type
+        WHEN 4 THEN 'Daily'
+        WHEN 8 THEN
+            LTRIM(
+                CASE WHEN s.freq_interval & 2  = 2  THEN 'Mon ' ELSE '' END +
+                CASE WHEN s.freq_interval & 4  = 4  THEN 'Tue ' ELSE '' END +
+                CASE WHEN s.freq_interval & 8  = 8  THEN 'Wed ' ELSE '' END +
+                CASE WHEN s.freq_interval & 16 = 16 THEN 'Thu ' ELSE '' END +
+                CASE WHEN s.freq_interval & 32 = 32 THEN 'Fri ' ELSE '' END +
+                CASE WHEN s.freq_interval & 64 = 64 THEN 'Sat ' ELSE '' END +
+                CASE WHEN s.freq_interval & 1  = 1  THEN 'Sun ' ELSE '' END
+            )
+        WHEN 16 THEN 'Day ' + CAST(s.freq_interval AS VARCHAR)
+        WHEN 32 THEN
+            CASE s.freq_relative_interval
+                WHEN 1  THEN 'First '
+                WHEN 2  THEN 'Second '
+                WHEN 4  THEN 'Third '
+                WHEN 8  THEN 'Fourth '
+                WHEN 16 THEN 'Last '
+            END +
+            CASE s.freq_interval
+                WHEN 1  THEN 'Sun'
+                WHEN 2  THEN 'Mon'
+                WHEN 3  THEN 'Tue'
+                WHEN 4  THEN 'Wed'
+                WHEN 5  THEN 'Thu'
+                WHEN 6  THEN 'Fri'
+                WHEN 7  THEN 'Sat'
+                WHEN 8  THEN 'Day'
+                WHEN 9  THEN 'Weekday'
+                WHEN 10 THEN 'Weekend'
+            END
+        ELSE ''
+    END                                 AS [Day],
+
+    -- Time: 執行時間 (格式 HH:MM AM/PM)
     CASE
-        WHEN s.freq_type = 4 THEN '每 ' + CAST(s.freq_interval AS VARCHAR) + ' 天'
-        WHEN s.freq_type = 8 THEN
-            CASE WHEN s.freq_interval & 1  = 1  THEN '日 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 2  = 2  THEN '一 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 4  = 4  THEN '二 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 8  = 8  THEN '三 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 16 = 16 THEN '四 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 32 = 32 THEN '五 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 64 = 64 THEN '六 ' ELSE '' END
+        WHEN s.freq_subday_type = 1 THEN  -- 只在指定時間執行一次
+            LTRIM(RIGHT(CONVERT(VARCHAR(22),
+                CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME),
+                100), 11))
+        ELSE  -- 有子頻率 (每 N 分鐘/小時)，顯示起迄區間
+            LTRIM(RIGHT(CONVERT(VARCHAR(22),
+                CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME),
+                100), 11))
+            + ' - '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22),
+                CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_end_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME),
+                100), 11))
+    END                                 AS [Time],
+
+    -- Schedule Summary: 完整排程描述 (模擬 SQL Server Agent 格式)
+    CASE
+        -- 每天 + 子頻率 (每 N 分鐘/小時)
+        WHEN s.freq_type = 4 AND s.freq_subday_type IN (2, 4, 8) THEN
+            'Occurs every day, every '
+            + CAST(s.freq_subday_interval AS VARCHAR) + ' '
+            + CASE s.freq_subday_type WHEN 2 THEN 'second(s)' WHEN 4 THEN 'minute(s)' WHEN 8 THEN 'hour(s)' END
+            + ' between '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+            + ' and '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_end_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每天 + 指定時間
+        WHEN s.freq_type = 4 AND s.freq_subday_type = 1 THEN
+            'Occurs every day at '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每週 + 子頻率
+        WHEN s.freq_type = 8 AND s.freq_subday_type IN (2, 4, 8) THEN
+            'Occurs every week on '
+            + LTRIM(
+                CASE WHEN s.freq_interval & 2  = 2  THEN 'Monday, '   ELSE '' END +
+                CASE WHEN s.freq_interval & 4  = 4  THEN 'Tuesday, '  ELSE '' END +
+                CASE WHEN s.freq_interval & 8  = 8  THEN 'Wednesday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 16 = 16 THEN 'Thursday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 32 = 32 THEN 'Friday, '   ELSE '' END +
+                CASE WHEN s.freq_interval & 64 = 64 THEN 'Saturday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 1  = 1  THEN 'Sunday, '   ELSE '' END
+              )
+            + 'every '
+            + CAST(s.freq_subday_interval AS VARCHAR) + ' '
+            + CASE s.freq_subday_type WHEN 2 THEN 'second(s)' WHEN 4 THEN 'minute(s)' WHEN 8 THEN 'hour(s)' END
+            + ' between '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+            + ' and '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_end_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每週 + 指定時間
+        WHEN s.freq_type = 8 AND s.freq_subday_type = 1 THEN
+            'Occurs every week on '
+            + LTRIM(
+                CASE WHEN s.freq_interval & 2  = 2  THEN 'Monday, '   ELSE '' END +
+                CASE WHEN s.freq_interval & 4  = 4  THEN 'Tuesday, '  ELSE '' END +
+                CASE WHEN s.freq_interval & 8  = 8  THEN 'Wednesday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 16 = 16 THEN 'Thursday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 32 = 32 THEN 'Friday, '   ELSE '' END +
+                CASE WHEN s.freq_interval & 64 = 64 THEN 'Saturday, ' ELSE '' END +
+                CASE WHEN s.freq_interval & 1  = 1  THEN 'Sunday, '   ELSE '' END
+              )
+            + 'at '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每月 + 指定時間
+        WHEN s.freq_type = 16 AND s.freq_subday_type = 1 THEN
+            'Occurs every month on day '
+            + CAST(s.freq_interval AS VARCHAR)
+            + ' at '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每月 + 子頻率
+        WHEN s.freq_type = 16 AND s.freq_subday_type IN (2, 4, 8) THEN
+            'Occurs every month on day '
+            + CAST(s.freq_interval AS VARCHAR)
+            + ', every '
+            + CAST(s.freq_subday_interval AS VARCHAR) + ' '
+            + CASE s.freq_subday_type WHEN 2 THEN 'second(s)' WHEN 4 THEN 'minute(s)' WHEN 8 THEN 'hour(s)' END
+            + ' between '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+            + ' and '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_end_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 每月相對 + 指定時間
+        WHEN s.freq_type = 32 AND s.freq_subday_type = 1 THEN
+            'Occurs every month on the '
+            + CASE s.freq_relative_interval
+                WHEN 1  THEN 'first '
+                WHEN 2  THEN 'second '
+                WHEN 4  THEN 'third '
+                WHEN 8  THEN 'fourth '
+                WHEN 16 THEN 'last '
+              END
+            + CASE s.freq_interval
+                WHEN 1  THEN 'Sunday'  WHEN 2  THEN 'Monday'  WHEN 3  THEN 'Tuesday'
+                WHEN 4  THEN 'Wednesday' WHEN 5 THEN 'Thursday' WHEN 6 THEN 'Friday'
+                WHEN 7  THEN 'Saturday' WHEN 8 THEN 'day' WHEN 9 THEN 'weekday' WHEN 10 THEN 'weekend day'
+              END
+            + ' at '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- 單次
+        WHEN s.freq_type = 1 THEN
+            'Occurs once at '
+            + LTRIM(RIGHT(CONVERT(VARCHAR(22), CAST(STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':') AS TIME), 100), 11))
+
+        -- Agent 啟動時
+        WHEN s.freq_type = 64  THEN 'Occurs when SQL Server Agent starts'
+        WHEN s.freq_type = 128 THEN 'Occurs when server is idle'
+
         ELSE ''
-    END                             AS [排程間隔明細],
-    -- 排程執行時間
-    STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':')
-                                    AS [排程開始時間],
-    CASE s.freq_subday_type
-        WHEN 1 THEN '於指定時間'
-        WHEN 2 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 秒'
-        WHEN 4 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 分鐘'
-        WHEN 8 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 小時'
-        ELSE ''
-    END                             AS [子排程頻率],
-    @@SERVERNAME                    AS [伺服器名稱]
+    END                                 AS [Schedule Summary],
+
+    j.description                       AS [Description]
+
 FROM msdb.dbo.sysjobs j
-LEFT JOIN msdb.dbo.syscategories c
-    ON j.category_id = c.category_id
 LEFT JOIN msdb.dbo.sysjobschedules js
     ON j.job_id = js.job_id
 LEFT JOIN msdb.dbo.sysschedules s
     ON js.schedule_id = s.schedule_id
-LEFT JOIN msdb.dbo.sysjobactivity ja
-    ON j.job_id = ja.job_id
-    AND ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)
-OUTER APPLY (
-    SELECT TOP 1 run_status, run_date, run_time, run_duration
-    FROM msdb.dbo.sysjobhistory
-    WHERE job_id = j.job_id AND step_id = 0
-    ORDER BY run_date DESC, run_time DESC
-) h
-ORDER BY j.name;
-
-
--- =====================================================================
--- 查詢 2：Job Steps 明細 (貼到 Sheet 2 - 步驟明細)
--- =====================================================================
-SELECT
-    j.name                          AS [Job 名稱],
-    js.step_id                      AS [步驟編號],
-    js.step_name                    AS [步驟名稱],
-    CASE js.subsystem
-        WHEN 'TSQL'       THEN 'T-SQL'
-        WHEN 'CmdExec'    THEN '作業系統命令'
-        WHEN 'PowerShell' THEN 'PowerShell'
-        WHEN 'SSIS'       THEN 'SSIS 封裝'
-        ELSE js.subsystem
-    END                             AS [步驟類型],
-    js.database_name                AS [執行資料庫],
-    js.command                      AS [執行命令],
-    CASE js.on_success_action
-        WHEN 1 THEN '成功後結束'
-        WHEN 2 THEN '成功後到下一步'
-        WHEN 3 THEN '成功後跳到步驟 ' + CAST(js.on_success_step_id AS VARCHAR)
-        WHEN 4 THEN '成功後報告失敗'
-    END                             AS [成功後動作],
-    CASE js.on_fail_action
-        WHEN 1 THEN '失敗後結束'
-        WHEN 2 THEN '失敗後到下一步'
-        WHEN 3 THEN '失敗後跳到步驟 ' + CAST(js.on_fail_step_id AS VARCHAR)
-        WHEN 4 THEN '失敗後報告失敗'
-    END                             AS [失敗後動作],
-    js.retry_attempts               AS [重試次數],
-    js.retry_interval               AS [重試間隔(分鐘)],
-    @@SERVERNAME                    AS [伺服器名稱]
-FROM msdb.dbo.sysjobs j
-INNER JOIN msdb.dbo.sysjobsteps js
-    ON j.job_id = js.job_id
-ORDER BY j.name, js.step_id;
-
-
--- =====================================================================
--- 查詢 3：Job 執行歷史紀錄 (貼到 Sheet 3 - 執行歷史)
--- =====================================================================
-SELECT
-    j.name                          AS [Job 名稱],
-    h.step_id                       AS [步驟編號],
-    h.step_name                     AS [步驟名稱],
-    msdb.dbo.agent_datetime(h.run_date, h.run_time) AS [執行時間],
-    CASE h.run_status
-        WHEN 0 THEN '失敗'
-        WHEN 1 THEN '成功'
-        WHEN 2 THEN '重試'
-        WHEN 3 THEN '已取消'
-        WHEN 4 THEN '進行中'
-    END                             AS [執行結果],
-    h.run_duration / 10000 * 3600
-    + (h.run_duration % 10000) / 100 * 60
-    + h.run_duration % 100          AS [執行時長(秒)],
-    h.message                       AS [訊息],
-    @@SERVERNAME                    AS [伺服器名稱]
-FROM msdb.dbo.sysjobhistory h
-INNER JOIN msdb.dbo.sysjobs j
-    ON h.job_id = j.job_id
-WHERE h.run_date >= CONVERT(VARCHAR(8), DATEADD(DAY, -30, GETDATE()), 112)  -- 最近 30 天
-ORDER BY j.name, h.run_date DESC, h.run_time DESC;
-
-
--- =====================================================================
--- 查詢 4：Job 排程明細 (貼到 Sheet 4 - 排程明細)
--- =====================================================================
-SELECT
-    j.name                          AS [Job 名稱],
-    s.name                          AS [排程名稱],
-    CASE s.enabled
-        WHEN 1 THEN '啟用'
-        WHEN 0 THEN '停用'
-    END                             AS [排程狀態],
-    CASE s.freq_type
-        WHEN 1  THEN '單次'
-        WHEN 4  THEN '每天'
-        WHEN 8  THEN '每週'
-        WHEN 16 THEN '每月'
-        WHEN 32 THEN '每月相對'
-        WHEN 64 THEN 'SQL Agent 啟動時'
-        WHEN 128 THEN '伺服器閒置時'
-    END                             AS [頻率類型],
-    CASE s.freq_type
-        WHEN 4 THEN '每 ' + CAST(s.freq_interval AS VARCHAR) + ' 天'
-        WHEN 8 THEN
-            CASE WHEN s.freq_interval & 1  = 1  THEN '週日 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 2  = 2  THEN '週一 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 4  = 4  THEN '週二 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 8  = 8  THEN '週三 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 16 = 16 THEN '週四 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 32 = 32 THEN '週五 ' ELSE '' END +
-            CASE WHEN s.freq_interval & 64 = 64 THEN '週六 ' ELSE '' END
-        WHEN 16 THEN '每月第 ' + CAST(s.freq_interval AS VARCHAR) + ' 天'
-        ELSE ''
-    END                             AS [執行日],
-    STUFF(STUFF(RIGHT('000000' + CAST(s.active_start_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':')
-                                    AS [開始時間],
-    CASE s.freq_subday_type
-        WHEN 1 THEN '於指定時間執行一次'
-        WHEN 2 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 秒'
-        WHEN 4 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 分鐘'
-        WHEN 8 THEN '每 ' + CAST(s.freq_subday_interval AS VARCHAR) + ' 小時'
-    END                             AS [子頻率],
-    STUFF(STUFF(RIGHT('000000' + CAST(s.active_end_time AS VARCHAR), 6), 5, 0, ':'), 3, 0, ':')
-                                    AS [結束時間],
-    @@SERVERNAME                    AS [伺服器名稱]
-FROM msdb.dbo.sysjobs j
-INNER JOIN msdb.dbo.sysjobschedules js
-    ON j.job_id = js.job_id
-INNER JOIN msdb.dbo.sysschedules s
-    ON js.schedule_id = s.schedule_id
-ORDER BY j.name, s.name;
-
-
--- =====================================================================
--- 查詢 5：Job 通知設定 (貼到 Sheet 5 - 通知設定)
--- =====================================================================
-SELECT
-    j.name                          AS [Job 名稱],
-    CASE j.notify_level_email
-        WHEN 0 THEN '不通知'
-        WHEN 1 THEN '成功時'
-        WHEN 2 THEN '失敗時'
-        WHEN 3 THEN '完成時'
-    END                             AS [Email 通知條件],
-    ISNULL(o_email.name, '無')      AS [Email 操作員],
-    CASE j.notify_level_page
-        WHEN 0 THEN '不通知'
-        WHEN 1 THEN '成功時'
-        WHEN 2 THEN '失敗時'
-        WHEN 3 THEN '完成時'
-    END                             AS [呼叫器通知條件],
-    CASE j.delete_level
-        WHEN 0 THEN '不刪除'
-        WHEN 1 THEN '成功後刪除'
-        WHEN 2 THEN '失敗後刪除'
-        WHEN 3 THEN '完成後刪除'
-    END                             AS [自動刪除條件],
-    @@SERVERNAME                    AS [伺服器名稱]
-FROM msdb.dbo.sysjobs j
-LEFT JOIN msdb.dbo.sysoperators o_email
-    ON j.notify_email_operator_id = o_email.id
 ORDER BY j.name;
