@@ -365,12 +365,14 @@ LEFT JOIN sys.objects ro ON d.referenced_id = ro.object_id
 WHERE o.type = 'P'
   AND o.name IN (
     -- 只撈 Job Step 裡有 EXEC 到的 SP
-    SELECT DISTINCT LTRIM(RTRIM(REPLACE(REPLACE(
-        SUBSTRING(js.command,
-            PATINDEX('%EXEC %', js.command) + 5,
-            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
-                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
-        ), CHAR(13), ''), CHAR(10), '')))
+    SELECT DISTINCT
+        LTRIM(RTRIM(
+            SUBSTRING(
+                SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200),
+                1,
+                CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200) + ' ') - 1
+            )
+        ))
     FROM msdb.dbo.sysjobsteps js
     WHERE js.command LIKE '%EXEC %'
       AND js.subsystem = 'TSQL'
