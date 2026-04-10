@@ -197,39 +197,35 @@ SELECT
 FROM msdb.dbo.sysjobs j
 INNER JOIN msdb.dbo.sysjobsteps js ON j.job_id = js.job_id
 CROSS APPLY (
-    -- 解析 DELETE ... FROM [db].[schema].[table]
+    -- 解析 DELETE ... FROM [table]
     SELECT 'DELETE' AS operation,
-           CASE
-               WHEN js.command LIKE '%DELETE%FROM %' THEN
-                   LTRIM(RTRIM(REPLACE(REPLACE(
-                       SUBSTRING(js.command,
-                           PATINDEX('%FROM [^ ]%', js.command) + 5,
-                           PATINDEX('%[  ' + CHAR(13) + CHAR(10) + ']%',
-                               SUBSTRING(js.command, PATINDEX('%FROM [^ ]%', js.command) + 5, 200) + ' ') - 1
-                       ), '[', ''), ']', '')))
-               ELSE NULL
-           END AS table_name,
+           LTRIM(RTRIM(REPLACE(REPLACE(
+               SUBSTRING(
+                   SUBSTRING(js.command, CHARINDEX('FROM ', js.command) + 5, 200),
+                   1,
+                   CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('FROM ', js.command) + 5, 200) + ' ') - 1
+               ), '[', ''), ']', ''))) AS table_name,
            'SOURCE' AS direction
     WHERE js.command LIKE '%DELETE%FROM %'
     UNION ALL
-    -- 解析 INSERT INTO / OUTPUT ... INTO [db].[schema].[table]
+    -- 解析 INSERT INTO / OUTPUT ... INTO [table]
     SELECT 'INSERT/OUTPUT INTO',
            LTRIM(RTRIM(REPLACE(REPLACE(
-               SUBSTRING(js.command,
-                   PATINDEX('%INTO %', js.command) + 5,
-                   PATINDEX('%[  ' + CHAR(13) + CHAR(10) + ']%',
-                       SUBSTRING(js.command, PATINDEX('%INTO %', js.command) + 5, 200) + ' ') - 1
+               SUBSTRING(
+                   SUBSTRING(js.command, CHARINDEX('INTO ', js.command) + 5, 200),
+                   1,
+                   CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('INTO ', js.command) + 5, 200) + ' ') - 1
                ), '[', ''), ']', ''))),
            'TARGET'
     WHERE js.command LIKE '%INTO %'
     UNION ALL
-    -- 解析 JOIN [db].[schema].[table]
+    -- 解析 JOIN [table]
     SELECT 'JOIN',
            LTRIM(RTRIM(REPLACE(REPLACE(
-               SUBSTRING(js.command,
-                   PATINDEX('%JOIN %', js.command) + 5,
-                   PATINDEX('%[  ' + CHAR(13) + CHAR(10) + ']%',
-                       SUBSTRING(js.command, PATINDEX('%JOIN %', js.command) + 5, 200) + ' ') - 1
+               SUBSTRING(
+                   SUBSTRING(js.command, CHARINDEX('JOIN ', js.command) + 5, 200),
+                   1,
+                   CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('JOIN ', js.command) + 5, 200) + ' ') - 1
                ), '[', ''), ']', ''))),
            'REFERENCE'
     WHERE js.command LIKE '%JOIN %'
@@ -237,10 +233,10 @@ CROSS APPLY (
     -- 解析 EXEC sp_name
     SELECT 'EXEC SP',
            LTRIM(RTRIM(
-               SUBSTRING(js.command,
-                   PATINDEX('%EXEC %', js.command) + 5,
-                   PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
-                       SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
+               SUBSTRING(
+                   SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200),
+                   1,
+                   CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200) + ' ') - 1
                ))),
            'CALL'
     WHERE js.command LIKE '%EXEC %'
@@ -248,10 +244,10 @@ CROSS APPLY (
     -- 解析 ALTER PARTITION
     SELECT 'ALTER PARTITION',
            LTRIM(RTRIM(
-               SUBSTRING(js.command,
-                   PATINDEX('%ALTER PARTITION %', js.command) + 17,
-                   PATINDEX('%[  ' + CHAR(13) + CHAR(10) + ']%',
-                       SUBSTRING(js.command, PATINDEX('%ALTER PARTITION %', js.command) + 17, 200) + ' ') - 1
+               SUBSTRING(
+                   SUBSTRING(js.command, CHARINDEX('ALTER PARTITION ', js.command) + 17, 200),
+                   1,
+                   CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('ALTER PARTITION ', js.command) + 17, 200) + ' ') - 1
                ))),
            'DDL'
     WHERE js.command LIKE '%ALTER PARTITION%'
@@ -280,12 +276,14 @@ LEFT JOIN sys.objects ro
     ON d.referenced_id = ro.object_id
 WHERE p.name IN (
     -- 只撈 Job Step 裡有 EXEC 到的 SP
-    SELECT DISTINCT LTRIM(RTRIM(REPLACE(REPLACE(
-        SUBSTRING(js.command,
-            PATINDEX('%EXEC %', js.command) + 5,
-            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
-                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
-        ), CHAR(13), ''), CHAR(10), '')))
+    SELECT DISTINCT
+        LTRIM(RTRIM(
+            SUBSTRING(
+                SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200),
+                1,
+                CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200) + ' ') - 1
+            )
+        ))
     FROM msdb.dbo.sysjobsteps js
     WHERE js.command LIKE '%EXEC %'
       AND js.subsystem = 'TSQL'
@@ -303,13 +301,13 @@ SELECT
     js.step_id                          AS [Step #],
     js.step_name                        AS [Step Name],
     js.database_name                    AS [Step Database],
-    -- 擷取 EXEC 後面的 SP 名稱 (處理換行與多餘空白)
-    LTRIM(RTRIM(REPLACE(REPLACE(
-        SUBSTRING(js.command,
-            PATINDEX('%EXEC %', js.command) + 5,
-            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
-                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
-        ), CHAR(13), ''), CHAR(10), '')
+    -- 擷取 EXEC 後面的 SP 名稱
+    LTRIM(RTRIM(
+        SUBSTRING(
+            SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200),
+            1,
+            CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200) + ' ') - 1
+        )
     ))                                  AS [SP Name],
     p.create_date                       AS [SP Created],
     p.modify_date                       AS [SP Last Modified],
@@ -321,12 +319,13 @@ SELECT
 FROM msdb.dbo.sysjobs j
 INNER JOIN msdb.dbo.sysjobsteps js ON j.job_id = js.job_id
 LEFT JOIN sys.procedures p
-    ON p.name = LTRIM(RTRIM(REPLACE(REPLACE(
-        SUBSTRING(js.command,
-            PATINDEX('%EXEC %', js.command) + 5,
-            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
-                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
-        ), CHAR(13), ''), CHAR(10), '')))
+    ON p.name = LTRIM(RTRIM(
+        SUBSTRING(
+            SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200),
+            1,
+            CHARINDEX(' ', SUBSTRING(js.command, CHARINDEX('EXEC ', js.command) + 5, 200) + ' ') - 1
+        )
+    ))
 LEFT JOIN sys.sql_modules m ON p.object_id = m.object_id
 WHERE js.command LIKE '%EXEC %'
   AND js.subsystem = 'TSQL'
