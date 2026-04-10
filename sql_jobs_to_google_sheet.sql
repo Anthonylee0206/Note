@@ -264,6 +264,7 @@ ORDER BY j.name, js.step_id, t.direction;
 -- 3B：透過 SP 相依性反查，找出 SP 內部引用的所有資料表
 --     需在 Job 使用的資料庫下執行 (例如 USE cmd_data)
 SELECT
+    DB_NAME()                           AS [Source Database],
     p.name                              AS [SP Name],
     d.referenced_database_name          AS [Referenced Database],
     ISNULL(d.referenced_schema_name, 'dbo') AS [Referenced Schema],
@@ -285,6 +286,7 @@ ORDER BY p.name, d.referenced_entity_name;
 -- 需在 Job 使用的資料庫下執行 (例如 USE cmd_data)
 -- =====================================================================
 SELECT
+    DB_NAME()                           AS [Current Database],
     j.name                              AS [Job Name],
     js.step_id                          AS [Step #],
     js.step_name                        AS [Step Name],
@@ -324,6 +326,7 @@ ORDER BY j.name, js.step_id;
 -- 需在對應資料庫下執行 (例如 USE cmd_data)
 -- =====================================================================
 SELECT
+    DB_NAME()                           AS [Current Database],
     OBJECT_NAME(d.referencing_id)       AS [SP Name],
     d.referenced_database_name          AS [Referenced Database],
     ISNULL(d.referenced_schema_name, 'dbo') AS [Referenced Schema],
