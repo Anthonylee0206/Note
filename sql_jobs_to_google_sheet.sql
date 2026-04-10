@@ -261,7 +261,7 @@ WHERE js.subsystem = 'TSQL'
   AND t.table_name <> ''
 ORDER BY j.name, js.step_id, t.direction;
 
--- 3B：透過 SP 相依性反查，找出 SP 內部引用的所有資料表
+-- 3B：透過 SP 相依性反查，只撈 Job 有呼叫到的 SP 的相依性
 --     需在 Job 使用的資料庫下執行 (例如 USE cmd_data)
 SELECT
     DB_NAME()                           AS [Source Database],
@@ -278,6 +278,18 @@ INNER JOIN sys.sql_expression_dependencies d
     ON p.object_id = d.referencing_id
 LEFT JOIN sys.objects ro
     ON d.referenced_id = ro.object_id
+WHERE p.name IN (
+    -- 只撈 Job Step 裡有 EXEC 到的 SP
+    SELECT DISTINCT LTRIM(RTRIM(REPLACE(REPLACE(
+        SUBSTRING(js.command,
+            PATINDEX('%EXEC %', js.command) + 5,
+            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
+                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
+        ), CHAR(13), ''), CHAR(10), '')))
+    FROM msdb.dbo.sysjobsteps js
+    WHERE js.command LIKE '%EXEC %'
+      AND js.subsystem = 'TSQL'
+)
 ORDER BY p.name, d.referenced_entity_name;
 
 
@@ -352,6 +364,18 @@ INNER JOIN sys.objects o ON d.referencing_id = o.object_id
 LEFT JOIN sys.sql_modules m ON d.referencing_id = m.object_id
 LEFT JOIN sys.objects ro ON d.referenced_id = ro.object_id
 WHERE o.type = 'P'
+  AND o.name IN (
+    -- 只撈 Job Step 裡有 EXEC 到的 SP
+    SELECT DISTINCT LTRIM(RTRIM(REPLACE(REPLACE(
+        SUBSTRING(js.command,
+            PATINDEX('%EXEC %', js.command) + 5,
+            PATINDEX('%[  ,' + CHAR(13) + CHAR(10) + CHAR(39) + ']%',
+                SUBSTRING(js.command, PATINDEX('%EXEC %', js.command) + 5, 200) + ' ') - 1
+        ), CHAR(13), ''), CHAR(10), '')))
+    FROM msdb.dbo.sysjobsteps js
+    WHERE js.command LIKE '%EXEC %'
+      AND js.subsystem = 'TSQL'
+)
 ORDER BY OBJECT_NAME(d.referencing_id), d.referenced_entity_name;
 
 
