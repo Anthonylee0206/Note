@@ -1,3 +1,24 @@
+/* =========================================================================
+   【用途】       列出目前 DB 內所有分區資料表的「表名 / 分區號 / 上下界 / Scheme /
+                  Function / FileGroup / 筆數 / 分區欄位」，並預留 SWITCH / MERGE /
+                  SPLIT / TRUNCATE 語法產生器（註解中）。
+   【使用時機】   分區盤點；執行 SWITCH / MERGE / SPLIT 之前先查現況；
+                  排查資料筆數失衡、錯誤 FileGroup 放置。
+   【輸入參數】   預設看全部。可視情況取消註解收斂範圍：
+                  第 28 行 ps.name IN (...) — 只看特定 Partition Scheme
+                  第 29 行 row_count > 0    — 排除空分區
+                  第 30 行 partition_number < 22 — 限定分區號
+                  第 31 行 fg.name = '...'  — 限定 FileGroup
+                  第 32~33 行 OBJECT_NAME = '...' — 鎖定單表
+                  第 11~14 行的語法字串：取消註解即可看到可直接複製執行的
+                  SWITCH / MERGE / SPLIT / TRUNCATE 指令。
+   【輸出】       TableName / PartitionNumber / LowerBoundary / UpperBoundary /
+                  PartitionScheme / PartitionFunction / FileGroupName / row_count / partition_column
+   【風險/注意】  純查系統 DMV，Prod 可直接跑。
+                  只看 index_id < 2（Heap 或 Clustered），不含非叢集索引的空間。
+                  檔尾註解區塊是另一段查詢：各 Function 的最大邊界值。
+   ========================================================================= */
+
 SELECT
 	 OBJECT_NAME(p.object_id) as TableName
 	,p.partition_number as PartitionNumber

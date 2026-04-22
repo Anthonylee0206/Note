@@ -1,3 +1,19 @@
+/* =========================================================================
+   【用途】       兩段動態 SQL / 字元編碼的排錯練習：
+                    前半段：動態 SQL 串 @A 到 SELECT TOP 的 bug 示範
+                           （變數 @A 不會被代換到 @SQL 字面值裡面）
+                    後半段：泰文字元 'ปณิธาน สิทธินวล' 塞進 VARCHAR(50) 被截掉的編碼問題
+                           （示範為什麼該用 NVARCHAR + N'...' 前綴）
+   【使用時機】   教學 / 自學；追不到為什麼資料變亂碼或顯示「??」時回來看。
+   【輸入參數】   @a       — TOP 筆數（預設 3）
+                  @mem_id  — 要 UPDATE 的 mem_name（預設一段泰文字）
+   【輸出】       user_currency_log / mem_info 兩張測試表的查詢結果。
+   【風險/注意】 - 會 DROP 重建 user_currency_log 與 mem_info，勿在 Prod 執行。
+                  - 需要先跑 04_索引與資料表/Create_Table_範例.sql 建立 user_currency 表。
+                  - 前半段的 INSERT ... SELECT 其實是語法錯誤（缺逗號 + @A 不會代換），
+                    這就是這支的排錯重點。
+   ========================================================================= */
+
 DROP TABLE IF EXISTS [user_currency_log]
 
 CREATE TABLE [dbo].[user_currency_log]

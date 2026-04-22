@@ -1,3 +1,15 @@
+/* =========================================================================
+   【用途】       建立 user_currency / user_currency_archive 兩張範例資料表，
+                  並灌入 2000+ 筆 fixture 資料，供索引、查詢、排錯測試用。
+   【使用時機】   在測試機 / 個人環境建立練習用資料；排錯筆記的前置腳本。
+   【輸入參數】   無。使用預設 schema [dbo]，主檔案群組 [PRIMARY]。
+   【輸出】       資料表：[dbo].[user_currency]、[dbo].[user_currency_archive]
+                  複合主鍵：(user_id, curr_id, merchant_id)；CLUSTERED。
+   【風險/注意】 - 開頭有 DROP TABLE IF EXISTS，會直接清掉同名表，勿在 Prod 執行。
+                  - 2000+ 筆 INSERT 每筆都 GO 一次，執行時會較慢。
+                  - 僅為範例資料，不代表實際業務結構。
+   ========================================================================= */
+
 DROP TABLE IF EXISTS user_currency
 GO
 

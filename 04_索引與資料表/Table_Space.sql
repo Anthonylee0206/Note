@@ -1,3 +1,15 @@
+/* =========================================================================
+   【用途】       列出資料庫內所有使用者資料表的「筆數 + 空間用量 + 壓縮狀態」。
+   【使用時機】   盤點肥大表、評估是否要做 PAGE 壓縮、磁碟快滿時找目標。
+   【輸入參數】   第 15 行 t.NAME = '...' 可取消註解鎖定單表；
+                  第 17 行 p.data_compression_desc = 'NONE' 可取消註解只看未壓縮；
+                  第 9 行被註解掉的那一行可產生 ALTER TABLE REBUILD ... DATA_COMPRESSION=PAGE 語法產生器。
+   【輸出】       TableName / IndexName / 壓縮描述 / Rows / TotalSpaceGB / UsedSpaceGB / DataSpaceGB
+                  預設依 Rows 由大到小排序。
+   【風險/注意】  純查詢，全表帶 WITH (NOLOCK)，Prod 可直接跑。
+                  統計範圍僅含 Heap 或 Clustered Index（index_id ≤ 1），不含非叢集索引額外空間。
+   ========================================================================= */
+
 SELECT
   t.NAME AS TableName,
   CASE WHEN i.name IS NULL THEN 'Heap Table' ELSE i.name END as IndexName,
