@@ -72,7 +72,7 @@ Note/
 |---|---|---|
 | [Clustered_Index.md](04_索引與資料表/Clustered_Index.md) | 叢集索引筆記 | |
 | [Table_Index.sql](04_索引與資料表/Table_Index.sql) | 資料表索引查詢 | |
-| [Credit維護腳本.sql](04_索引與資料表/Credit維護腳本.sql) | Credit 維護日索引重組（> 20% + SOCTRANS / SOCTRANSPAR / WINLOSE 的 PK 一律重組） | 2026-10-30 起，ryan 指定 |
+| [Credit維護腳本.sql](04_索引與資料表/Credit維護腳本.sql) | Credit 維護日：列出 SOCTRANS / SOCTRANSPAR / WINLOSE 的 PK 重組語法（不看碎片率） | 2026-10-30 起，ryan 指定 |
 | [Table_Space.sql](04_索引與資料表/Table_Space.sql) | 資料表空間查詢 | |
 | [Create_Table_範例.sql](04_索引與資料表/Create_Table_範例.sql) | 建立資料表範例 | |
 
