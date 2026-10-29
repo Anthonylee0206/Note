@@ -1,6 +1,6 @@
 # NOTE 筆記索引
 
-最後更新：2026-04-22
+最後更新：2026-10-29
 
 ---
 
@@ -72,6 +72,7 @@ Note/
 |---|---|---|
 | [Clustered_Index.md](04_索引與資料表/Clustered_Index.md) | 叢集索引筆記 | |
 | [Table_Index.sql](04_索引與資料表/Table_Index.sql) | 資料表索引查詢 | |
+| [Credit維護腳本.sql](04_索引與資料表/Credit維護腳本.sql) | Credit 維護日索引重組（> 20% + SOCTRANS / SOCTRANSPAR / WINLOSE 的 PK 一律重組） | 2026-10-30 起，ryan 指定 |
 | [Table_Space.sql](04_索引與資料表/Table_Space.sql) | 資料表空間查詢 | |
 | [Create_Table_範例.sql](04_索引與資料表/Create_Table_範例.sql) | 建立資料表範例 | |
 
@@ -152,5 +153,7 @@ Note/
 **學習新概念時** → [SP審查_進階議題.md](01_SP審查/SP審查_進階議題.md)
 
 **寫動態查詢時** → [DynamicSQL.md](07_SQL語法/DynamicSQL.md)
+
+**Credit 維護日** → [Credit維護腳本.sql](04_索引與資料表/Credit維護腳本.sql)
 
 **cmd_data_log 要維護時** → 先看 [cmd_data_log_維護SOP.md](09_日誌與設定/cmd_data_log_維護SOP.md)，大掃除用 [cmd_data_log_自動清理.md](09_日誌與設定/cmd_data_log_自動清理.md)
